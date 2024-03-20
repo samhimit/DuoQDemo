@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/DamageEvents.h"
 
 // Sets default values for this component's properties
 UTP_WeaponComponent::UTP_WeaponComponent()
@@ -26,30 +27,32 @@ void UTP_WeaponComponent::Fire()
 	// }
 
 	// Try and fire a projectile
-	if (ProjectileClass != nullptr)
+	UWorld* const World = GetWorld();
+	if (World != nullptr)
 	{
-		UWorld* const World = GetWorld();
-		if (World != nullptr)
+		FRotator SpawnRotation;
+		APawn* Pawn = Cast<APawn>(GetOwner());
+		SpawnRotation = Pawn->GetController()->GetControlRotation();
+		// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
+		const FVector SpawnLocation = GetOwner()->GetActorLocation() + SpawnRotation.RotateVector(MuzzleOffset);
+		const FVector EndLocation = GetOwner()->GetActorLocation() + SpawnRotation.RotateVector(FVector(10000.0f,0.0f,0.0f));
+		
+		FHitResult HitResult(ForceInit);
+		FCollisionQueryParams CollisionParams;
+		CollisionParams.bDebugQuery = true;
+		bool DidHitObject = World->LineTraceSingleByChannel(HitResult,SpawnLocation,EndLocation,ECC_WorldDynamic);
+		DrawDebugLine(GetWorld(), SpawnLocation, EndLocation, FColor::Green, true, 2.f, false, 4.f);
+		if(GEngine)
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Shooting!"));
+		if(DidHitObject)
 		{
-			// APlayerController* PlayerController = Cast<APlayerController>(Character->GetController());
-			FRotator SpawnRotation;
-			// if(PlayerController)
-			// 	SpawnRotation = PlayerController->PlayerCameraManager->GetCameraRotation();
-			// else
-			// {
-				APawn* Pawn = Cast<APawn>(GetOwner());
-				SpawnRotation = Pawn->GetController()->GetControlRotation();
-			// }
-			// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
-			const FVector SpawnLocation = GetOwner()->GetActorLocation() + SpawnRotation.RotateVector(MuzzleOffset);
-	
-			//Set Spawn Collision Handling Override
-			FActorSpawnParameters ActorSpawnParams;
-			ActorSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
-	
-			// Spawn the projectile at the muzzle
-			World->SpawnActor<ADuoQProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, ActorSpawnParams);
+			if(GEngine)
+				GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Some debug message!"));
+			HitResult.GetActor()->TakeDamage(1.0f,FDamageEvent(),Pawn->GetController(),GetOwner());
 		}
+		if(FireEffect != nullptr)
+			UGameplayStatics::SpawnEmitterAttached(FireEffect, this,TEXT("Muzzle"),FVector(),FRotator(),EAttachLocation::KeepRelativeOffset, true);
+			//UGameplayStatics::SpawnEmitterAttached(FireEffect, this,"Muzzle",SpawnLocation + SpawnRotation.RotateVector(FVector(0.0f,100.0f,-20.0f)), FRotator::ZeroRotator,EAttachLocation::KeepRelativeOffset, true);
 	}
 	
 	// Try and play the sound if specified
@@ -57,6 +60,8 @@ void UTP_WeaponComponent::Fire()
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, FireSound, GetOwner()->GetActorLocation());
 	}
+	
+	
 	
 	// Try and play a firing animation if specified
 	// if (FireAnimation != nullptr)
